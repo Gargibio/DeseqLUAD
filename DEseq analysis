@@ -1,0 +1,204 @@
+install.packages("BiocManager")
+BiocManager::install("DESeq2")
+BiocManager::install("airway")
+
+library(DESeq2)
+library(tidyverse)
+library(airway)
+library(dplyr)
+
+
+# Step 1: preparing count data ----------------
+
+# read in counts data
+# first column treated as rownames
+counts_data <- read.csv('C:/Users/User/Downloads/luad_matrix.csv', header = TRUE, row.names = 1)
+
+head(counts_data)
+
+
+# read in sample info
+colData <- read.csv('C:/Users/User/Downloads/meta_data.csv', header=TRUE, row.names = 1)
+head(colData)
+
+counts_data <- round(counts_data)
+
+# Calculate the sum of counts for each row (gene)
+row_sums <- rowSums(counts_data)
+
+# Filter out rows where the sum is zero
+counts_data <- counts_data[row_sums > 0, ]
+
+
+
+dim(counts_data)
+dim(colData)
+colData$Group <- as.factor(colData$Group)
+
+# making sure the row names in colData matches to column names in counts_data
+all(colnames(counts_data) %in% rownames(colData))
+
+# are they in the same order?
+all(colnames(counts_data) == rownames(colData))
+
+
+# Step 2: construct a DESeqDataSet object ----------
+
+dds <- DESeqDataSetFromMatrix(countData = counts_data,
+                              colData = colData,
+                              design = ~ Group)
+
+dds
+
+# pre-filtering: removing rows with low gene counts
+
+counts_data <- round(counts_data)
+
+# Calculate the sum of counts for each row (gene)
+row_sums <- rowSums(counts_data)
+
+# Filter out rows where the sum is zero
+counts_data <- counts_data[row_sums > 0, ]
+
+# keeping rows that have at least 10 reads total
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+
+dds
+
+# set the factor level
+dds$Group <- relevel(dds$Group, ref = "Normal")
+
+# NOTE: collapse technical replicates
+
+# Step 3: Run DESeq ----------------------
+dds <- DESeq(dds)
+res <- results(dds)
+
+res
+
+dds
+write.csv(res, file = "C:/Users/User/Downloads/luad_deseq.csv", row.names = TRUE)
+
+
+# Explore Results ----------------
+
+summary(res)
+
+res0.01 <- results(dds, alpha = 0.05)
+summary(res0.01)
+
+
+filtered <- res %>% 
+  as.data.frame() %>% 
+  filter(padj < 0.05)
+
+filtered <- res %>% Filter(res0.01$padj < 0.05)
+
+filtered %>% Filter(abs(filtered$log2FoldChange) > 1)
+filtered <- filtered %>% 
+  filter(abs(log2FoldChange) > 1)
+
+dim(res)
+dim(filtered)
+
+# contrasts
+resultsNames(dds)
+
+
+# MA plot
+plotMA(res0.01)
+
+# To plot dispersion curve
+plotDispEsts(dds)
+
+
+dev.off()
+
+vsd <- vst(dds, blind = FALSE)
+
+# To plot PCA 
+plotPCA(vsd, intgroup='Group')
+colnames(colData(vsd))
+
+
+
+# preparing data for heatmap
+sampledist <- dist(t(assay(vsd)))
+sampledistmatrix <- as.matrix(sampledist)
+colnames(sampledistmatrix)
+
+install.packages('pheatmap')
+library(pheatmap)
+
+install.packages("RColorBrewer")
+library(RColorBrewer)
+
+
+colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+
+pheatmap(sampledistmatrix, clustering_distance_rows = sampledist, 
+         clustering_distance_cols = sampledist, col = colors)
+
+res1 <- res[res$baseMean > 50,]
+res1
+
+BiocManager::install("clusterProfiler")
+
+library(clusterProfiler)
+
+BiocManager::install("AnnotationDbi")
+BiocManager::install("org.Hs.eg.db")
+BiocManager::install("apeglm")
+library(apeglm)
+
+gene_list <- res1$stat 
+names(gene_list) <- rownames(res1)
+gene_list
+
+gene_list <- sort(gene_list, decreasing = TRUE)
+gene_list
+
+library(org.Hs.eg.db)
+head(gene_list)
+
+
+
+gse <- gseGO(gene_list, OrgDb = "org.Hs.eg.db", ont = "BP", 
+             keyType = "ENSEMBL", eps = 1e-300)
+
+
+gseaplot(gse, geneSetID = 1 )
+
+low_enriched <- gse[gse$NES < 0, ]
+last_gene_set_id <- head(low_enriched$ID, 1)
+gseaplot(gse, geneSetID = last_gene_set_id)
+print(last_gene_set_id)
+
+#To remove noise
+reslfc <- lfcShrink(dds, coef = "Group_Tumor_vs_Normal", type = "apeglm")
+
+reslfc <- as.data.frame(reslfc)
+
+
+reslfc$diffexpressed <- "NO"
+
+reslfc$diffexpressed[reslfc$log2FoldChange> 0.1 & reslfc$padj<0.05] <- "UP"
+reslfc$diffexpressed[reslfc$log2FoldChange< 0.1 & reslfc$padj<0.05] <- "DOWN"
+
+reslfc$delabel <- "NA"
+
+library(ggplot2)
+
+ggplot(data = reslfc, aes(x= log2FoldChange, y = log10(pvalue), col= diffexpressed, label=delabel))+
+  geom_point()+
+  theme_minimal()+
+  scale_colour_manual(values = c('blue', 'black', 'red'))+
+  theme(text= element_text(size = 20))
+
+
+
+
+
+
+dev.off()
