@@ -1,0 +1,58 @@
+# Check if the 'BiocManager' package is installed; if not, install it
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+# Install 'TCGAbiolinks' package using BiocManager (required for accessing TCGA data)
+BiocManager::install("TCGAbiolinks")
+
+# Install 'SummarizedExperiment' package (needed for handling genomic data)
+BiocManager::install("SummarizedExperiment")
+
+# Load the required libraries
+library(TCGAbiolinks)           # For accessing and analyzing TCGA data
+library(tidyverse)              # For data manipulation and visualization
+library(maftools)               # For analyzing and visualizing somatic variants
+library(pheatmap)               # For creating heatmaps
+library(SummarizedExperiment)   # For handling large genomic datasets
+
+# Get a list of all GDC projects (including TCGA projects)
+gdcprojects <- getGDCprojects()
+
+# Get a summary of the 'TCGA-LUAD' project (Lung Adenocarcinoma project in TCGA)
+getProjectSummary('TCGA-LUAD')
+
+# Query GDC to retrieve TCGA-LUAD transcriptome profiling data
+query_TCGA <- GDCquery(project = 'TCGA-LUAD',
+                       data.category = 'Transcriptome Profiling')
+
+# Refine the query to get gene expression quantification data for specific barcodes
+query_TCGA <- GDCquery(project = 'TCGA-LUAD',
+                       data.category = 'Transcriptome Profiling',
+                       data.type = "Gene Expression Quantification",
+                       workflow.type = "STAR - Counts",   # Workflow used to generate data
+                       access = 'open',                   # Open access data
+                       barcode = c("TCGA-73-4658-01A-01R-1755-07", "TCGA-44-2661-11A-01R-1758-07", 
+                                   "TCGA-55-6986-11A-01R-1949-07", "TCGA-55-8615-01A-11R-2403-07", 
+                                   "TCGA-97-8177-01A-11R-2287-07", "TCGA-49-6744-11A-01R-1858-07", 
+                                   "TCGA-67-3771-01A-01R-0946-07"))  # Specific sample barcodes
+
+# Download the data based on the query
+GDCdownload(query_TCGA)
+
+# Get the results of the query (e.g., metadata)
+getResults(query_TCGA)
+
+# Output the cases (samples) included in the query (you can view the case IDs)
+output_query_TCGA$cases
+
+# Prepare the downloaded data, converting it into a SummarizedExperiment object
+tcga_luad_data <- GDCprepare(query_TCGA, summarizedExperiment = TRUE)
+
+# Extract the assay data (gene expression matrix) from the SummarizedExperiment object
+# Using 'tpm_unstrand' assay data (transcripts per million, unstranded)
+luad_matrix <- assay(tcga_luad_data, 'tpm_unstrand')
+
+# Write the extracted matrix to a CSV file
+write.csv(luad_matrix, file = "C:/Users/User/Downloads/luad_matrix.csv", row.names = FALSE)
+
+
