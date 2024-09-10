@@ -1,0 +1,40 @@
+
+# To install pandas
+!pip install pandas mygene
+
+import pandas as pd
+import mygene
+
+# Initialize MyGene.info client
+mg = mygene.MyGeneInfo()
+
+# Load your DESeq result CSV file
+df = pd.read_csv('/content/luad_deseq.csv')
+
+# Remove version suffix from ENSG IDs
+df['Gene'] = df['Gene'].str.split('.').str[0]
+
+# Extract ENSG gene IDs
+ensg_ids = df['Gene'].tolist()  # Change 'Gene' to your actual column name if different
+
+# Query MyGene.info to convert ENSG IDs to HUGO gene symbols
+result = mg.querymany(ensg_ids, scopes='ensembl.gene', fields='symbol', species='human')
+
+# Debugging: Print a portion of the result to check if it's correct
+#print("Result snippet:", result[:5])  # Print the first 5 results
+
+# Create a dictionary for ID conversion
+id_mapping = {item['query']: item.get('symbol', 'NA') for item in result if 'query' in item}
+
+# Debugging: Print the id_mapping dictionary to verify mappings
+print("ID mapping snippet:", dict(list(id_mapping.items())[:5]))  # Print the first 5 mappings
+
+# Replace ENSG IDs with HUGO gene symbols in the dataframe
+df['Gene'] = df['Gene'].map(id_mapping)  # Change 'Gene' to your actual column name if different
+
+# Check if any ENSG IDs in the original dataframe are not found in the mapping
+unmapped_genes = df['Gene'].isna().sum()
+print(f'Number of unmapped genes: {unmapped_genes}')
+
+# Save the updated dataframe to a new CSV file
+df.to_csv('deseq_results_hugo.csv', index=False)
